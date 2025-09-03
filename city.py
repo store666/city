@@ -2,6 +2,8 @@ import os
 import json
 import unicodedata
 import asyncio
+import nest_asyncio
+nest_asyncio.apply()
 import threading
 from dataclasses import dataclass, field
 from typing import Dict, Set, List, Optional, Tuple
@@ -191,21 +193,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     await update.message.reply_text(f"{text.strip().capitalize()} принят! Ход {next_name} на '{g.need_letter.upper()}'.")
+
 async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     async with locks.get(chat_id, asyncio.Lock()):
         games.pop(chat_id, None)
         locks.pop(chat_id, None)
     await update.message.reply_text("Игра сброшена. /start чтобы начать новую.")
-
-# ---------- Flask + Telegram ----------
+import asyncio
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def index():
     return "🎮 Telegram бот 'Города' работает!"
 
-def run_bot():
+async def run_bot_async():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("join", cmd_join))
@@ -214,9 +216,15 @@ def run_bot():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Бот запущен...")
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    port = int(os.environ.get("PORT", 5000))
-    flask_app.run(host="0.0.0.0", port=port)
+    import threading
+
+    # Запускаем Flask-сервер в отдельном потоке
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000))), daemon=True).start()
+
+    # Запускаем Telegram-бот в основном потоке
+    asyncio.run(run_bot_async())
+
+
