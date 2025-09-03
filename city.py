@@ -200,7 +200,9 @@ async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         games.pop(chat_id, None)
         locks.pop(chat_id, None)
     await update.message.reply_text("Игра сброшена. /start чтобы начать новую.")
-import asyncio
+import nest_asyncio
+nest_asyncio.apply()
+
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -216,15 +218,12 @@ async def run_bot_async():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Бот запущен...")
-    await app.run_polling()
+    await app.run_polling(close_loop=False)  # ← ключевой параметр
 
 if __name__ == "__main__":
     import threading
-
-    # Запускаем Flask-сервер в отдельном потоке
     threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000))), daemon=True).start()
-
-    # Запускаем Telegram-бот в основном потоке
     asyncio.run(run_bot_async())
+
 
 
