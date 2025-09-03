@@ -191,7 +191,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     await update.message.reply_text(f"{text.strip().capitalize()} принят! Ход {next_name} на '{g.need_letter.upper()}'.")
-
 async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     async with locks.get(chat_id, asyncio.Lock()):
@@ -211,4 +210,13 @@ def run_bot():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("join", cmd_join))
     app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(Command)
+    app.add_handler(CommandHandler("restart", cmd_restart))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    print("Бот запущен...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    threading.Thread(target=run_bot).start()
+    port = int(os.environ.get("PORT", 5000))
+    flask_app.run(host="0.0.0.0", port=port)
