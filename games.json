@@ -1,0 +1,50 @@
+{
+  "-4701904124": {
+    "players": [
+      433188758,
+      369716441
+    ],
+    "usernames": {
+      "433188758": "endwood",
+      "369716441": "Corvalolumm"
+    },
+    "scores": {
+      "433188758": 0,
+      "369716441": 0
+    },
+    "current_turn": 0,
+    "started": true,
+    "used_cities": [],
+    "last_letter": null
+  },
+  "433188758": {
+    "players": [
+      433188758
+    ],
+    "usernames": {
+      "433188758": "endwood"
+    },
+    "scores": {
+      "433188758": 0
+    },
+    "current_turn": 0,
+    "started": false,
+    "used_cities": [],
+    "last_letter": null
+  },
+  "369716441": {
+    "players": [
+      369716441
+    ],
+    "usernames": {
+      "369716441": "Corvalolumm"
+    },
+    "scores": {
+      "369716441": 0
+    },
+    "current_turn": 0,
+    "started": false,
+    "used_cities": [],
+    "last_letter": null
+  }
+}
