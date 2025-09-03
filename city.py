@@ -2,47 +2,36 @@ import os
 import json
 import unicodedata
 import asyncio
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, Set, List, Optional, Tuple
 from collections import defaultdict
 from dotenv import load_dotenv
+from flask import Flask
 
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 )
 
-# ---------- Загрузка токена из .env ----------
+# ---------- Загрузка токена ----------
 load_dotenv()
-token = os.getenv("BOT_TOKEN")
-if not token or token.strip() == "":
-    raise ValueError(
-        "❌ Не найден BOT_TOKEN. "
-        "Создайте файл .env с BOT_TOKEN=ваш_реальный_токен или установите переменную окружения."
-    )
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN or BOT_TOKEN.strip() == "":
+    raise ValueError("❌ BOT_TOKEN не найден. Укажите его в .env или переменной окружения.")
 
 # ---------- Загрузка списка городов ----------
 def load_cities(file_path: str = "cities.json") -> List[str]:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError("Файл cities.json не найден.")
-    except json.JSONDecodeError:
-        raise ValueError("Ошибка при разборе cities.json.")
-
-# ---------- Нормализация и индексация ----------
-def normalize_text(s: str) -> str:
-    """Привести текст к стандартной форме: lowercase, без дефисов/пробелов, ё->е"""
-    try:
-        s = unicodedata.normalize("NFC", s).strip().lower()
-        s = s.replace("ё", "е").replace("-", "").replace(" ", "")
-        # Удаляем неалфавитные символы, кроме русских букв
-        s = ''.join(c for c in s if c.isalpha() or c in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
-        return s
     except Exception as e:
-        print(f"Ошибка нормализации текста: {e}")
-        return ""
+        raise RuntimeError(f"Ошибка загрузки cities.json: {e}")
+
+def normalize_text(s: str) -> str:
+    s = unicodedata.normalize("NFC", s).strip().lower()
+    s = s.replace("ё", "е").replace("-", "").replace(" ", "")
+    return ''.join(c for c in s if c.isalpha() or c in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
 
 def build_city_index(cities: List[str]) -> Tuple[Set[str], Dict[str, Set[str]]]:
     all_norm = {normalize_text(c) for c in cities if normalize_text(c)}
@@ -52,21 +41,16 @@ def build_city_index(cities: List[str]) -> Tuple[Set[str], Dict[str, Set[str]]]:
             by_first[c[0]].add(c)
     return all_norm, by_first
 
-# Загрузка городов
 RAW_CITIES = load_cities("cities.json")
 CITIES, CITIES_BY_FIRST = build_city_index(RAW_CITIES)
 
-# ---------- Логика игры ----------
 TAIL_SKIP = {"ь", "ъ", "ы"}
 
 def last_working_letter(city: str) -> Optional[str]:
     c = normalize_text(city)
-    if not c:
-        return None
     for ch in reversed(c):
-        if ch in TAIL_SKIP:
-            continue
-        return ch
+        if ch not in TAIL_SKIP:
+            return ch
     return None
 
 @dataclass
@@ -79,9 +63,7 @@ class Game:
     started: bool = False
 
     def current_player(self) -> Optional[int]:
-        if not self.players:
-            return None
-        return self.players[self.turn_idx % len(self.players)]
+        return self.players[self.turn_idx % len(self.players)] if self.players else None
 
     def next_turn(self):
         self.turn_idx = (self.turn_idx + 1) % len(self.players)
@@ -107,24 +89,20 @@ def has_moves(game: Game) -> bool:
     candidates = CITIES_BY_FIRST.get(game.need_letter, set())
     return len(candidates - game.used) > 0
 
-# ---------- Хранилище и блокировки ----------
 games: Dict[int, Game] = {}
 locks: Dict[int, asyncio.Lock] = {}
 
 # ---------- Хендлеры ----------
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
+    await update.message.reply_text(
         "🎮 Игра в города\n"
-        "Правила: Игроки по очереди называют города. Название следующего города должно начинаться на последнюю букву предыдущего города (кроме ь, ъ, ы). Побеждает тот, кто назовёт последний город.\n\n"
-        "Команды:\n"
-        "/start — Создать новую игру\n"
-        "/join — Присоединиться к игре\n"
-        "/status — Показать статус игры\n"
-        "/restart — Сбросить игру\n"
-        "/help — Показать эту справку\n"
+        "/start — создать игру\n"
+        "/join — присоединиться\n"
+        "/status — статус\n"
+        "/restart — сброс\n"
+        "/help — справка\n"
         "Просто отправьте название города, чтобы сделать ход."
     )
-    await update.message.reply_text(help_text)
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -133,9 +111,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat_id in games:
             await update.message.reply_text("Игра уже создана. Используйте /join.")
             return
-        g = Game(players=[user.id], usernames={user.id: user.username or user.first_name or "Аноним"}, started=False)
+        g = Game(players=[user.id], usernames={user.id: user.username or user.first_name or "Аноним"})
         games[chat_id] = g
-        locks[chat_id] = asyncio.Lock()  # Создаём блокировку для чата
+        locks[chat_id] = asyncio.Lock()
     await update.message.reply_text(f"Создано лобби. {g.usernames[user.id]} — игрок 1. Второму игроку: /join")
 
 async def cmd_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -156,7 +134,7 @@ async def cmd_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         g.usernames[user.id] = user.username or user.first_name or "Аноним"
         g.started = True
         first = g.usernames[g.players[g.turn_idx]]
-    await update.message.reply_text(f"Игроки: {', '.join(g.usernames[p] for p in g.players)}. Начинает {first}. Назовите любой город.")
+    await update.message.reply_text(f"Игроки: {', '.join(g.usernames[p] for p in g.players)}. Начинает {first}.")
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -175,10 +153,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async with locks.get(chat_id, asyncio.Lock()):
         g = games.get(chat_id)
-        if not g:
-            return
-        if not g.started or len(g.players) < 2:
-            await update.message.reply_text("Ждём второго игрока. /join")
+        if not g or not g.started or len(g.players) < 2:
+            await update.message.reply_text("Игра не активна или ждёт второго игрока.")
             return
         if user.id not in g.players:
             await update.message.reply_text("Вы не в этой игре. /join")
@@ -200,18 +176,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(reasons.get(reason, "Ошибка."))
             return
 
-        # Принять ход
         g.add_used(city_norm)
         g.need_letter = last_working_letter(city_norm)
         g.next_turn()
         next_name = g.usernames[g.current_player()]
 
-        # Проверка на отсутствие ходов
         if not has_moves(g):
-            winner = user
             await update.message.reply_text(
                 f"{text.strip().capitalize()} принят. Больше нет городов на '{g.need_letter.upper()}'. "
-                f"Победил {g.usernames[winner.id]}!"
+                f"Победил {g.usernames[user.id]}!"
             )
             del games[chat_id]
             del locks[chat_id]
@@ -226,20 +199,16 @@ async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         locks.pop(chat_id, None)
     await update.message.reply_text("Игра сброшена. /start чтобы начать новую.")
 
-# ---------- Запуск ----------
-def main():
-    try:
-        app = ApplicationBuilder().token(token).build()
-        app.add_handler(CommandHandler("start", cmd_start))
-        app.add_handler(CommandHandler("join", cmd_join))
-        app.add_handler(CommandHandler("status", cmd_status))
-        app.add_handler(CommandHandler("restart", cmd_restart))
-        app.add_handler(CommandHandler("help", cmd_help))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-        print("Бот запущен...")
-        app.run_polling()
-    except Exception as e:
-        print(f"Ошибка при запуске бота: {e}")
+# ---------- Flask + Telegram ----------
+flask_app = Flask(__name__)
 
-if __name__ == "__main__":
-    main()
+@flask_app.route('/')
+def index():
+    return "🎮 Telegram бот 'Города' работает!"
+
+def run_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("join", cmd_join))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(Command)
