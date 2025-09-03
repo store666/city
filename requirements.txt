@@ -2,3 +2,5 @@ python-telegram-bot==20.3
 lxml
 python-dotenv
 flask==2.3.3
+nest_asyncio==1.5.8
+nest_asyncio==1.5.8
