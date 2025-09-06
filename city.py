@@ -209,7 +209,7 @@ flask_app = Flask(__name__)
 def index():
     return "🎮 Telegram бот 'Города' работает!"
 
-async def run_bot_async():
+def run_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("join", cmd_join))
@@ -218,12 +218,13 @@ async def run_bot_async():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Бот запущен...")
-    await app.run_polling(close_loop=False)  # ← ключевой параметр
+    app.run_polling(close_loop=False)  # ← без await
 
 if __name__ == "__main__":
     import threading
-    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000))), daemon=True).start()
-    asyncio.run(run_bot_async())
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000))), daemon=True).start()
+    run_bot()
+
 
 
 
